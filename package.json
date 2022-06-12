@@ -1,0 +1,98 @@
+{
+    "name": "let-s-refactor",
+	"displayName": "let's refactor",
+	"description": "use to support refactor",
+	"version": "0.0.1",
+	"publisher": "hancao97",
+	"engines": {
+		"vscode": "^1.49.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+        "onView:refactorView-main"
+	],
+	"main": "./extension.js",
+	"contributes": {
+		"commands": [{
+            "command": "let-s-refactor.count",
+            "title": "count business files and code lines",
+			"icon": "resources/count.svg"
+		}, 
+		{
+			"command": "let-s-refactor.unusedFile",
+            "title": "list unused business files",
+			"icon": "resources/unused-file.svg"
+		},
+		{
+			"command": "let-s-refactor.unusedExport",
+            "title": "list unused business exports",
+			"icon": "resources/unused-export.svg"
+		}, 
+		{
+			"command": "let-s-refactor.viewProjectArchitecture",
+            "title": "view project architecture",
+			"icon": "resources/architecture.svg"
+		}
+		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "let-s-refactor.count",
+					"when": "view == refactorView-main",
+					"group": "navigation@1"
+				}, 
+				{
+					"command": "let-s-refactor.unusedFile",
+					"when": "view == refactorView-main",
+					"group": "navigation@2"
+				},
+				{
+					"command": "let-s-refactor.unusedExport",
+					"when": "view == refactorView-main",
+					"group": "navigation@3"
+				},
+				{
+					"command": "let-s-refactor.viewProjectArchitecture",
+					"when": "view == refactorView-main",
+					"group": "navigation@4"
+				}
+			]
+		},
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "refactorView",
+					"title": "LET'S REFACTOR",
+					"icon": "resources/head.svg"
+				}
+			]
+		},
+		"views": {
+			"refactorView": [
+				{
+					"id": "refactorView-main",
+					"name": ""
+				}
+			]
+		}
+	},
+	"scripts": {
+		"lint": "eslint .",
+		"pretest": "yarn run lint",
+		"test": "node ./test/runTest.js"
+	},
+	"devDependencies": {
+        "@types/vscode": "^1.49.0",
+        "@types/glob": "^7.1.3",
+        "@types/mocha": "^8.2.2",
+        "@types/node": "14.x",
+        "eslint": "^7.27.0",
+        "glob": "^7.1.7",
+        "mocha": "^8.4.0",
+        "typescript": "^4.3.2",
+        "vscode-test": "^1.5.2"
+    }
+
+}
