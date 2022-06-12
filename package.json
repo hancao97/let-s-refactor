@@ -4,6 +4,7 @@
 	"description": "use to support refactor",
 	"version": "0.0.1",
 	"publisher": "hancao97",
+	"icon": "resources/let-s-refactor.png",
 	"engines": {
 		"vscode": "^1.49.0"
 	},
