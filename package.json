@@ -83,6 +83,10 @@
 		"pretest": "yarn run lint",
 		"test": "node ./test/runTest.js"
 	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/hancao97/let-s-refactor.git"
+	},
 	"devDependencies": {
         "@types/vscode": "^1.49.0",
         "@types/glob": "^7.1.3",
