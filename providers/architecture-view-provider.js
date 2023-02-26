@@ -1,10 +1,10 @@
-const { TreeItem, window, TreeItemCollapsibleState } = require('vscode');
-const { getProjectRoot, getIconUri } = require('../utils/index');
+const { TreeItem, window, TreeItemCollapsibleState, ThemeIcon } = require('vscode');
+const { getProjectSrc } = require('../utils/common');
 class Node extends TreeItem {
     constructor(label, collapsibleState, path) {
         super(label, collapsibleState);
         if(path) {
-            this.iconPath = getIconUri('file');
+            this.iconPath = new ThemeIcon('file');
             this.command = {
                 title: String(label),
                 command: 'viewArchitecture', 
@@ -14,13 +14,13 @@ class Node extends TreeItem {
                 ]
             }
         } else {
-            this.iconPath = getIconUri('click');
+            this.iconPath = new ThemeIcon('preview');
         }
     } 
 }
 class ArchitectureViewProvider {
     constructor(rootFileList) {
-        const rootPath = getProjectRoot();
+        const rootPath = getProjectSrc();
         this.rootFileList = rootFileList.map(file => ({
             label: file.replace(rootPath, ''),
             path: file

@@ -1,10 +1,10 @@
-const { TreeItem, window, TreeItemCollapsibleState } = require('vscode');
-const { getProjectRoot, getIconUri } = require('../utils/index');
+const { TreeItem, window, TreeItemCollapsibleState, ThemeIcon } = require('vscode');
+const { getProjectSrc } = require('../utils/common');
 class Node extends TreeItem {
     constructor(label, collapsibleState, path) {
         super(label, collapsibleState);
         if(path) {
-            this.iconPath = getIconUri('file');
+            this.iconPath = new ThemeIcon('file');
             this.path = path;
             this.command = {
                 title: String(label),
@@ -15,13 +15,13 @@ class Node extends TreeItem {
                 ]
             }
         } else {
-            this.iconPath = getIconUri('unused');
+            this.iconPath = new ThemeIcon('stop');
         }
     } 
 }
 class UnusedExportViewProvider {
     constructor(unusedExport) {
-        const rootPath = getProjectRoot();
+        const rootPath = getProjectSrc();
         this.unusedExport = unusedExport;
         this.unusedExportList = Object.keys(unusedExport).map(filePath => {
             return {
@@ -41,7 +41,7 @@ class UnusedExportViewProvider {
                 return new Node(`${item.label}（共${item.count}条无效导出）`, TreeItemCollapsibleState['Expanded'], item.path);
             })
         } else {
-            return this.unusedExport[element.path].map(exportItem => new Node(exportItem, TreeItemCollapsibleState['None']))
+            return this.unusedExport[element.path].map(exportItem => new Node(exportItem, TreeItemCollapsibleState['None'], element.path))
         }
     }
 

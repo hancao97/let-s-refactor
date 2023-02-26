@@ -2,7 +2,7 @@
     "name": "let-s-refactor",
 	"displayName": "let's refactor",
 	"description": "use to support refactor",
-	"version": "0.0.1",
+	"version": "0.0.4",
 	"publisher": "hancao97",
 	"icon": "resources/head.png",
 	"engines": {
@@ -19,22 +19,22 @@
 		"commands": [{
             "command": "let-s-refactor.count",
             "title": "count business files and code lines",
-			"icon": "resources/count.svg"
+			"icon": "$(graph)"
 		}, 
 		{
 			"command": "let-s-refactor.unusedFile",
             "title": "list unused business files",
-			"icon": "resources/unused-file.svg"
+			"icon": "$(files)"
 		},
 		{
 			"command": "let-s-refactor.unusedExport",
             "title": "list unused business exports",
-			"icon": "resources/unused-export.svg"
+			"icon": "$(export)"
 		}, 
 		{
 			"command": "let-s-refactor.viewProjectArchitecture",
             "title": "view project architecture",
-			"icon": "resources/architecture.svg"
+			"icon": "$(type-hierarchy)"
 		}
 		],
 		"menus": {

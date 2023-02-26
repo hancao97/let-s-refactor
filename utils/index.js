@@ -1,48 +1,40 @@
-const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
-const { includedFileSubfixes, excludedDirs } = require('../configs/index');
-const { IMPORT_ALL, VUE_MODULE, UNNAMED_DEFAULT, UNNAMED_FUNCTION, DECONSTRUCTION_STATEMENT_SYMBOLS } = require('../constants/index');
-const _isDir = (path) => {
-    const state = fs.statSync(path);
-    return !state.isFile();
-}
+const { DEFAULT, IMPORT_ALL, VUE_MODULE } = require('../constants/index');
 
-const getIconUri = (name) => {
-    return vscode.Uri.file(path.join(__filename, '..', '..', `resources/${name}.svg`));
-}
-
-const getProjectRoot = () => {
-    const rootInfo = vscode.workspace.workspaceFolders[0];
-    if (!rootInfo) {
-        vscode.window.showInformationMessage('no root!');
-        return '';
-    }
-    return path.join(rootInfo.uri.fsPath, '/src');
-}
-
-const getFileList = (dirPath) => {
-    let dirSubItems = fs.readdirSync(dirPath);
-    const fileList = [];
-    for (const item of dirSubItems) {
-        const childPath = path.join(dirPath, item);
-        if (_isDir(childPath) && !excludedDirs.has(item)) {
-            fileList.push(...getFileList(childPath));
-        } else if (!_isDir(childPath) && includedFileSubfixes.has(path.extname(item))) {
-            fileList.push(childPath);
-        }
-    }
-    return fileList;
-}
+const { getProjectSrc, getFileList, speculatePath, readFileAndIgnoreComments } = require('./common');
 
 const getBusinessFileList = () => {
-    const dirPath = getProjectRoot();
+    const dirPath = getProjectSrc();
     if (!dirPath) return [];
     return getFileList(dirPath);
 }
 
+const getFileLineCount = (fileList) => {
+    let lineCount = 0;
+    const hugeFileList = []
+    for (const file of fileList) {
+        const content = fs.readFileSync(file, {
+            encoding: 'utf-8'
+        });
+        const fileLineCount = content.split('\n').length
+        if (fileLineCount >= 500) {
+            hugeFileList.push({
+                file,
+                lineCount: fileLineCount
+            })
+        }
+        lineCount += fileLineCount;
+    }
+    hugeFileList.sort((a, b) => b.lineCount - a.lineCount);
+    return {
+        lineCount,
+        hugeFileList
+    };
+}
+
 const getBusinessRootFileList = () => {
-    const projectRoot = getProjectRoot();
+    const projectRoot = getProjectSrc();
     if (!projectRoot) return [];
     const fileList = [];
     const pagePath = path.join(projectRoot, '/views/pages');
@@ -60,56 +52,7 @@ const getBusinessRootFileList = () => {
     return fileList;
 }
 
-const getFileLineCount = (fileList) => {
-    let count = 0;
-    for (const file of fileList) {
-        const content = fs.readFileSync(file, {
-            encoding: 'utf-8'
-        });
-        count += content.split('\n').length;
-    }
-    return count;
-}
-
-const speculatePath = (source, basicPath) => {
-    let _source;
-    if (source.startsWith('@/')) {
-        const srcPath = getProjectRoot();
-        _source = `${srcPath}${source.replace('@', '')}`
-    } else {
-        _source = path.join(path.dirname(basicPath), source);
-    }
-    if (fs.existsSync(_source) && !_isDir(_source)) {
-        return _source;
-    }
-    let speculatePath;
-    if (fs.existsSync(_source) && _isDir(_source)) {
-        speculatePath = path.join(_source, '/index.js');
-        if (fs.existsSync(speculatePath)) {
-            return speculatePath;
-        }
-        speculatePath = path.join(_source, '/index.vue');
-        if (fs.existsSync(speculatePath)) {
-            return speculatePath;
-        }
-        return null;
-    }
-    if (!fs.existsSync(_source)) {
-        speculatePath = `${_source}.js`;
-        if (fs.existsSync(speculatePath)) {
-            return speculatePath;
-        }
-        speculatePath = `${_source}.vue`;
-        if (fs.existsSync(speculatePath)) {
-            return speculatePath;
-        }
-        return null;
-    }
-    return null;
-}
-
 const getImportPathRegs = () => {
-    // TODO: 无法检测运行时生成的路径
     return [
         // import * from './example'
         /(?<statement>import\s+.*?\s+from\s+['"](?<modulePath>.+?)['"])/g,
@@ -120,16 +63,14 @@ const getImportPathRegs = () => {
     ]
 }
 
-const getImportedFileSet = (fileList, set = new Set([])) => {
+const getEffectiveFileSet = (fileList, set = new Set([])) => {
     const _fileList = [];
     for (const file of fileList) {
         if (set.has(file)) {
             continue;
         }
         set.add(file);
-        const content = fs.readFileSync(file, {
-            encoding: 'utf-8'
-        });
+        const content = readFileAndIgnoreComments(file);
         const regReferences = getImportPathRegs();
         for (const reg of regReferences) {
             let matchResult;
@@ -142,102 +83,128 @@ const getImportedFileSet = (fileList, set = new Set([])) => {
             }
         }
     }
-    if (_fileList.length) getImportedFileSet(_fileList, set);
+    if (_fileList.length) getEffectiveFileSet(_fileList, set);
     return set;
 }
 
-const getExportRegs = () => {
-    // TODO: 无法检测运行时生成的路径
-    return [
-        // export const/class/function/var/default/- {xxx}/{xxx as yyy}
-        /export\s+(const|var|let|function|class|default)?\s*{(?<provide>[\w\W]+?)}/g,
-        // export const/class/function/var/default/- xxx TODO: provide 不能为 const var function 等
-        /export\s+(const|var|let|function|class|default)?\s*(?<provide>[\w-]+)/g
-    ]
-}
-// TODO: 未来改用词法分析 + 语法分析
+// export default
+// export default a;
+// export default () => {};
+// export default class {}
+// export default function() {}
+// export default { a: 1, b }
+//  除了 export default { a: 1, b } 情况，不需要考虑其名称
+
+// export 其他
+
+// export const/let/var { a: A, b } = xxx
+// export { a as A, b }
+
+// export const/let/var a = xxx
+// export function fn() {}
+// export class A {}
+
+// 总结: export default
+// 总结: export const/let/var/class/function xxx
+// 总结：export const/let/var {a: A, b} 取 A
+// 总结：export default {a: A, b} 取 a
+// 总结：export { a as A, b } 取 A
+
+const defaultExortReg = /export\s+default\s+/g;
+const normalExportReg = /export\s+(const|let|var|class|function)\s+(?<exported>[\w-]+)/g;
+const normalObjectExportReg = /export\s+(const|let|var)\s+{(?<exported>[\w\W]+?)}/g;
+const defaultObjectExportReg = /export\s+default\s+{(?<exported>[\w\W]+?)}/g;
+const ObjectExportReg = /export\s+{(?<exported>[\w\W]+?)}/g;
+
 const getExportInfo = (fileList) => {
     const exportInfo = {};
     for (const file of fileList) {
-        if (path.extname(file) === '.js') {
-            const content = fs.readFileSync(file, {
-                encoding: 'utf-8'
-            });
-            const provideList = [];
-            const regReferences = getExportRegs();
-            for (const reg of regReferences) {
-                let matchResult;
-                while ((matchResult = reg.exec(content))) {
-                    let { provide } = matchResult.groups;
-                    // const|var|let|function|class|default
-                    if (provide == 'default') {
-                        provide = UNNAMED_DEFAULT;
-                    } else if (provide == 'function') {
-                        provide = UNNAMED_FUNCTION;
-                    } else if (DECONSTRUCTION_STATEMENT_SYMBOLS.has(provide)) {
-                        continue;
-                    }
-                    provideList.push(...provide.split(',').map(item => {
-                        const temp = item.split(' as ');
-                        if (temp[1]) {
-                            return temp[1].replace(/\s/g, '');
-                        } else {
-                            return temp[0].replace(/\s/g, '');
-                        }
-                    }));
-                }
-            }
-            exportInfo[file] = provideList;
-        } else if (path.extname(file) === '.vue') {
+        const extname = path.extname(file);
+        if (extname === '.vue') {
             exportInfo[file] = VUE_MODULE;
+        } else if (extname === '.js') {
+            const content = readFileAndIgnoreComments(file);
+            const exportList = [];
+            let matchResult;
+            if (defaultExortReg.exec(content)) {
+                exportList.push(DEFAULT);
+            }
+            while ((matchResult = normalExportReg.exec(content))) {
+                let { exported } = matchResult.groups;
+                exportList.push(exported);
+            }
+            while ((matchResult = normalObjectExportReg.exec(content))) {
+                let { exported } = matchResult.groups;
+                exportList.push(...exported.split(',').map(item => {
+                    const temp = item.split(':');
+                    if (temp[1]) {
+                        return temp[1].replace(/\s/g, '');
+                    } else {
+                        return temp[0].replace(/\s/g, '');
+                    }
+                }).filter(item => item));
+            }
+            while ((matchResult = defaultObjectExportReg.exec(content))) {
+                let { exported } = matchResult.groups;
+                exportList.push(...exported.split(',').map(item => {
+                    const temp = item.split(':');
+                    return temp[0].replace(/\s/g, '');
+                }).filter(item => item));
+            }
+            while ((matchResult = ObjectExportReg.exec(content))) {
+                let { exported } = matchResult.groups;
+                exportList.push(...exported.split(',').map(item => {
+                    const temp = item.split(' as ');
+                    if (temp[1]) {
+                        return temp[1].replace(/\s/g, '');
+                    } else {
+                        return temp[0].replace(/\s/g, '');
+                    }
+                }).filter(item => item));
+            }
+            if(exportList.length) {
+                exportInfo[file] = [...new Set(exportList)];
+            }
         }
     }
     return exportInfo;
 }
 
-// TODO: be abandoned
-// const getImportRegs = () => {
-//     // TODO: 无法检测此情况的无效导出
-//     // 1. export xxx; xxx = {a, b} 暂时无法支持
-//     // import { a } from 'xxxx';
-//     // 2. export { a, b} 可以支持
-//     // import all from 'xxx';
-//     return [
-//         // import {xxx|xxx as yyy} form  xxxxxx
-//         /import\s+{(?<provide>[\w\W]+?)}\s+from\s+['"](?<modulePath>.+?)['"]/g,
-//         // import xxx|xxx as yyy form  xxxxxx
-//         /import\s+(?<provide>[^{}]+?)\s+from\s+['"](?<modulePath>.+?)['"]/g
-//     ]
-// }
-
 const getImportInfo = (fileList) => {
     const importInfo = {};
     for (const file of fileList) {
-        const content = fs.readFileSync(file, {
-            encoding: 'utf-8'
-        });
+        const content = readFileAndIgnoreComments(file);
         let matchResult;
-        const deconstructionReg = /import\s+{(?<provide>[\w\W]+?)}\s+from\s+['"](?<modulePath>.+?)['"]/g;
-        const constructionReg = /import\s+(?<provide>[^{}]+?)\s+from\s+['"](?<modulePath>.+?)['"]/g;
         // 解构
+        const deconstructionReg = /import\s+{(?<provide>[\w\W]+?)}\s+from\s+['"](?<modulePath>.+?)['"]/g;
         while ((matchResult = deconstructionReg.exec(content))) {
             const { provide, modulePath } = matchResult.groups;
             const filePath = speculatePath(modulePath, file);
             if (filePath) {
-                const provideList = provide.split(',').map(item => item.split(' as ')[0].replace(/\s/g, ''))
+                const provideList = provide.split(',').map(item => item.split(' as ')[0].replace(/\s/g, '')).filter(item => item);
                 if (!importInfo[filePath]) {
                     importInfo[filePath] = new Set(provideList);
                 } else if (importInfo[filePath] != IMPORT_ALL) {
-                    importInfo[filePath].add(...provideList);
+                    provideList.forEach(item => importInfo[filePath].add(item));
                 }
             }
         }
-        // 非解构
-        while ((matchResult = constructionReg.exec(content))) {
-            const { modulePath } = matchResult.groups;
-            const filePath = speculatePath(modulePath, file);
-            if (filePath) {
-                importInfo[filePath] = IMPORT_ALL;
+        // 不解构
+        const constructionRegs = [
+            /import\s+(?<provide>[\w-]+?)\s+from\s+['"](?<modulePath>.+?)['"]/g,
+            // import('example')
+            /import\(['"](?<modulePath>.+?)['"]\)/g,
+            // import './example'
+            /import\s+['"](?<modulePath>.+?)['"]/g
+        ]
+        for (const reg of constructionRegs) {
+            let matchResult;
+            while ((matchResult = reg.exec(content))) {
+                const { modulePath } = matchResult.groups;
+                const filePath = speculatePath(modulePath, file);
+                if (filePath) {
+                    importInfo[filePath] = IMPORT_ALL;
+                }
             }
         }
     }
@@ -245,7 +212,7 @@ const getImportInfo = (fileList) => {
 }
 
 const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
-    const rootPath = getProjectRoot();
+    const rootPath = getProjectSrc();
     const bufferLeft = 50;
     const bufferTop = 50;
     let rootFile = '';
@@ -260,11 +227,11 @@ const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
             let category = 'Other';
             if (file.startsWith(`${rootPath}/constant`)) {
                 category = 'Constant';
-            } else if(file.startsWith(`${rootPath}/config`)) {
+            } else if (file.startsWith(`${rootPath}/config`)) {
                 category = 'Config';
-            } else if(file.startsWith(`${rootPath}/service`)) {
+            } else if (file.startsWith(`${rootPath}/service`)) {
                 category = 'Service';
-            } else if(file.startsWith(`${rootPath}/util`)) {
+            } else if (file.startsWith(`${rootPath}/util`)) {
                 category = 'Util';
             }
             noncomponentFileList.push({
@@ -274,7 +241,7 @@ const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
         }
     });
     const nodes = [];
-    if(!rootFile) return nodes;
+    if (!rootFile) return nodes;
     const columnCount = 10;
     const columnWidth = 1000 / columnCount;
     const rowHeight = 160;
@@ -283,11 +250,11 @@ const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
             x: bufferLeft + (column + 0.3 + 0.4 * Math.random()) * columnWidth,
             y: bufferTop + (row + + 0.2 + 0.6 * Math.random()) * rowHeight
         }
-    } 
+    }
     let maxColumn = 0;
     let row = 1;
     let column = 0;
-    for(const file of componentFileList) {
+    for (const file of componentFileList) {
         nodes.push({
             id: file,
             name: file.replace(rootPath, ''),
@@ -295,13 +262,13 @@ const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
             category: 'VueComponent',
             ...getRandomPosition(row, column)
         })
-        if(column == columnCount - 1) row ++; 
+        if (column == columnCount - 1) row++;
         maxColumn = Math.max(column, maxColumn);
         column = (column + 1) % columnCount
     };
-    if(column != 0) row ++;
+    if (column != 0) row++;
     column = 0;
-    for(const fileInfo of noncomponentFileList) {
+    for (const fileInfo of noncomponentFileList) {
         nodes.push({
             id: fileInfo.file,
             name: fileInfo.file.replace(rootPath, ''),
@@ -309,7 +276,7 @@ const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
             category: fileInfo.category,
             ...getRandomPosition(row, column)
         })
-        if(column == columnCount - 1) row ++; 
+        if (column == columnCount - 1) row++;
         maxColumn = Math.max(column, maxColumn);
         column = (column + 1) % columnCount
     };
@@ -319,7 +286,7 @@ const getRelationshipMapNodes = (fileList, rootBusinessPath) => {
         path: rootFile,
         category: 'Root',
         x: bufferLeft + maxColumn * columnWidth / 2,
-        y: bufferTop + rowHeight / 2 
+        y: bufferTop + rowHeight / 2
     });
     return nodes;
 }
@@ -338,8 +305,8 @@ const getRelationshipMapLinkInfo = (fileList) => {
             while ((matchResult = reg.exec(content))) {
                 const { modulePath } = matchResult.groups;
                 const sourceFile = speculatePath(modulePath, targetFile);
-                if(!sourceFile) continue;
-                value ++;
+                if (!sourceFile) continue;
+                value++;
                 links.push({
                     source: sourceFile,
                     target: targetFile,
@@ -352,12 +319,10 @@ const getRelationshipMapLinkInfo = (fileList) => {
 }
 
 module.exports = {
-    getProjectRoot,
     getBusinessFileList,
     getBusinessRootFileList,
     getFileLineCount,
-    getImportedFileSet,
-    getIconUri,
+    getEffectiveFileSet,
     getExportInfo,
     getImportInfo,
     getRelationshipMapNodes,
