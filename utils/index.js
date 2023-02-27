@@ -55,7 +55,7 @@ const getBusinessRootFileList = () => {
 const getImportPathRegs = () => {
     return [
         // import * from './example'
-        /(?<statement>import\s+.*?\s+from\s+['"](?<modulePath>.+?)['"])/g,
+        /(?<statement>import\s+[\w\W]*?\s+from\s+['"](?<modulePath>.+?)['"])/g,
         // import('./example')
         /(?<statement>import\(['"](?<modulePath>.+?)['"]\))/g,
         // import './example'

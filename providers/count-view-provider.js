@@ -49,7 +49,7 @@ class CountViewProvider {
             const keys = Object.keys(nodeConfigs);
             const items = keys.map(key => {
                 const config = nodeConfigs[key];
-                const count = this.countInfo[key].length || this.countInfo[key] || 0;
+                const count = this.countInfo[key].length || (typeof this.countInfo[key] == 'number' && this.countInfo[key]) || 0;
                 return new Node(
                     `${config.title}:  ${count} ${config.unit}`,
                     count ? TreeItemCollapsibleState[config.state] : None,

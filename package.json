@@ -18,17 +18,17 @@
 	"contributes": {
 		"commands": [{
             "command": "let-s-refactor.count",
-            "title": "count business files and code lines",
+            "title": "微应用信息统计",
 			"icon": "$(graph)"
 		}, 
 		{
 			"command": "let-s-refactor.unusedFile",
-            "title": "list unused business files",
+            "title": "发现无效文件",
 			"icon": "$(files)"
 		},
 		{
 			"command": "let-s-refactor.unusedExport",
-            "title": "list unused business exports",
+            "title": "发现无效export",
 			"icon": "$(export)"
 		}, 
 		{
